@@ -2,9 +2,9 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>3D Room - High Performance FPS</title>
+    <title>3D Room - Touch & FPS Optimized</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; cursor: crosshair; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; cursor: crosshair; font-family: sans-serif; touch-action: none; }
         #instructions {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             color: white; text-align: center; background: rgba(0,0,0,0.8);
@@ -20,7 +20,7 @@
 </head>
 <body>
 
-    <div id="instructions"><b>CLIC PARA ENTRAR</b><br><small>Optimización de Sombras Activa (Balance Calidad/Rendimiento)</small></div>
+    <div id="instructions"><b>CLIC O TOCA PARA ENTRAR</b><br><small>WASD / Deslizar para mirar</small></div>
     <div id="fps-counter">FPS: --</div>
 
     <script type="importmap">
@@ -34,35 +34,29 @@
         scene.background = new THREE.Color(0x050505);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         
-        // El antialias consume recursos, pero lo dejamos activo para suavizar bordes
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limita la resolución en pantallas 4K para ganar FPS
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         
-        // CONFIGURACIÓN DE SOMBRAS EQUILIBRADA
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.VSMShadowMap; // VSM es más rápido y suave que PCFSoft
+        renderer.shadowMap.type = THREE.VSMShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         document.body.appendChild(renderer.domElement);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
         scene.add(ambientLight);
 
-        // LUZ CON SOMBRAS OPTIMIZADAS
         const pointLight = new THREE.PointLight(0xffffff, 80);
         pointLight.position.set(2, 4, 2);
         pointLight.castShadow = true;
-
-        // Bajamos a 1024 pero con VSM se verá muy bien
         pointLight.shadow.mapSize.width = 1024; 
         pointLight.shadow.mapSize.height = 1024;
         pointLight.shadow.camera.near = 0.5;
         pointLight.shadow.camera.far = 15;
-        pointLight.shadow.blurSamples = 8; // Suavizado por hardware
+        pointLight.shadow.blurSamples = 8;
         pointLight.shadow.radius = 4;
         scene.add(pointLight);
 
-        // TEXTURA DE MADERA
         const canvas = document.createElement('canvas');
         canvas.width = 512; canvas.height = 512;
         const ctx = canvas.getContext('2d');
@@ -76,7 +70,6 @@
         woodTexture.wrapS = woodTexture.wrapT = THREE.RepeatWrapping;
         woodTexture.repeat.set(4, 4);
 
-        // OBJETOS
         const floorMat = new THREE.MeshStandardMaterial({ map: woodTexture, roughness: 0.4, metalness: 0.1 });
         const wallMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.9 });
 
@@ -93,7 +86,6 @@
         sphere.castShadow = true;
         scene.add(sphere);
 
-        // FPS Y CONTROLES
         let lastTime = performance.now(), frames = 0;
         const fpsDisplay = document.getElementById('fps-counter');
         let isLocked = false;
@@ -103,6 +95,7 @@
         player.add(camera);
         scene.add(player);
 
+        // CONTROLES DE RATÓN
         document.addEventListener('click', () => renderer.domElement.requestPointerLock());
         document.addEventListener('pointerlockchange', () => {
             isLocked = document.pointerLockElement === renderer.domElement;
@@ -111,10 +104,34 @@
 
         document.addEventListener('mousemove', (e) => {
             if (!isLocked) return;
-            player.rotation.y -= e.movementX * 0.002;
-            camera.rotation.x -= e.movementY * 0.002;
-            camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
+            rotateCamera(e.movementX, e.movementY);
         });
+
+        // CONTROLES TÁCTILES
+        let touchX = 0, touchY = 0;
+        document.addEventListener('touchstart', (e) => {
+            touchX = e.touches[0].pageX;
+            touchY = e.touches[0].pageY;
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            const currentX = e.touches[0].pageX;
+            const currentY = e.touches[0].pageY;
+            const diffX = currentX - touchX;
+            const diffY = currentY - touchY;
+            
+            rotateCamera(diffX * 1.5, diffY * 1.5); // Factor 1.5 para mayor sensibilidad táctil
+            
+            touchX = currentX;
+            touchY = currentY;
+            e.preventDefault(); // Evita scroll
+        }, { passive: false });
+
+        function rotateCamera(moveX, moveY) {
+            player.rotation.y -= moveX * 0.002;
+            camera.rotation.x -= moveY * 0.002;
+            camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
+        }
 
         window.addEventListener('keydown', (e) => keys[e.code] = true);
         window.addEventListener('keyup', (e) => keys[e.code] = false);
@@ -127,7 +144,7 @@
                 fpsDisplay.innerText = `FPS: ${Math.round((frames * 1000) / (currentTime - lastTime))}`;
                 lastTime = currentTime; frames = 0;
             }
-            if (isLocked) {
+            if (isLocked || touchX !== 0) { // Permitir movimiento si hay interacción
                 const speed = 0.12;
                 if (keys['KeyW']) player.translateZ(-speed);
                 if (keys['KeyS']) player.translateZ(speed);
@@ -145,5 +162,4 @@
         });
     </script>
 </body>
-
 </html>
