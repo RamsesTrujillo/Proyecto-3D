@@ -2,25 +2,23 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>3D Room - Touch & FPS Optimized</title>
+    <title>3D Room - Restauración Completa</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; cursor: crosshair; font-family: sans-serif; touch-action: none; }
-        #instructions {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            color: white; text-align: center; background: rgba(0,0,0,0.8);
-            padding: 12px 25px; border-radius: 30px; border: 1px solid #444; z-index: 10;
+        body { margin: 0; overflow: hidden; background: #000; cursor: crosshair; font-family: sans-serif; }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
+            background: white; border-radius: 50%; transform: translate(-50%, -50%);
+            border: 2px solid rgba(0,0,0,0.5); z-index: 20; pointer-events: none;
         }
         #fps-counter {
-            position: absolute; top: 15px; right: 15px;
-            color: #00ffaa; background: rgba(0,0,0,0.7);
-            padding: 8px 15px; border-radius: 5px;
-            font-family: monospace; font-size: 14px; border-right: 3px solid #00ffaa;
+            position: absolute; top: 15px; right: 15px; color: #00ffaa; background: rgba(0,0,0,0.7);
+            padding: 8px 15px; border-radius: 5px; font-family: monospace;
         }
     </style>
 </head>
 <body>
 
-    <div id="instructions"><b>CLIC O TOCA PARA ENTRAR</b><br><small>WASD / Deslizar para mirar</small></div>
+    <div id="crosshair"></div>
     <div id="fps-counter">FPS: --</div>
 
     <script type="importmap">
@@ -30,136 +28,199 @@
     <script type="module">
         import * as THREE from 'three';
 
+        // --- ESCENA Y RENDER ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050505);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.VSMShadowMap;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(renderer.domElement);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
-        scene.add(ambientLight);
+        // --- ILUMINACIÓN ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.05));
 
-        const pointLight = new THREE.PointLight(0xffffff, 80);
-        pointLight.position.set(2, 4, 2);
-        pointLight.castShadow = true;
-        pointLight.shadow.mapSize.width = 1024; 
-        pointLight.shadow.mapSize.height = 1024;
-        pointLight.shadow.camera.near = 0.5;
-        pointLight.shadow.camera.far = 15;
-        pointLight.shadow.blurSamples = 8;
-        pointLight.shadow.radius = 4;
-        scene.add(pointLight);
+        // Luz del Sol (Desde la derecha de la ventana)
+        const sunLight = new THREE.DirectionalLight(0xfff5e1, 3.5);
+        sunLight.position.set(20, 15, -45); 
+        sunLight.castShadow = true;
+        sunLight.shadow.camera.left = -20; sunLight.shadow.camera.right = 20;
+        sunLight.shadow.camera.top = 20; sunLight.shadow.camera.bottom = -20;
+        sunLight.shadow.mapSize.set(2048, 2048);
+        scene.add(sunLight);
 
-        const canvas = document.createElement('canvas');
-        canvas.width = 512; canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#4a2c10';
-        ctx.fillRect(0, 0, 512, 512);
-        for (let i = 0; i < 100; i++) {
-            ctx.fillStyle = `rgba(30, 15, 5, ${Math.random() * 0.3})`;
-            ctx.fillRect(Math.random() * 512, 0, Math.random() * 5, 512);
+        // El objetivo de la luz (hacia donde apunta) para crear la diagonal
+        const sunTarget = new THREE.Object3D();
+        sunTarget.position.set(-10, 0, 0);
+        scene.add(sunTarget);
+        sunLight.target = sunTarget;
+
+        const windowLight = new THREE.PointLight(0x87ceeb, 60, 30);
+        windowLight.position.set(0, 5, -29.5);
+        scene.add(windowLight);
+
+        // LINTERNA
+        const flashLight = new THREE.SpotLight(0xffffff, 100);
+        flashLight.angle = Math.PI / 6;
+        flashLight.penumbra = 0.3;
+        flashLight.decay = 2;
+        flashLight.distance = 40;
+        camera.add(flashLight);
+        flashLight.position.set(0, 0, 0);
+        const lightTarget = new THREE.Object3D();
+        lightTarget.position.set(0, 0, -1);
+        camera.add(lightTarget);
+        flashLight.target = lightTarget;
+        scene.add(camera);
+
+        // --- TEXTURAS ---
+        function createWoodTexture() {
+            const size = 1024;
+            const canvas = document.createElement('canvas'), nCanvas = document.createElement('canvas');
+            canvas.width = nCanvas.width = size; canvas.height = nCanvas.height = size;
+            const ctx = canvas.getContext('2d'), nCtx = nCanvas.getContext('2d');
+            ctx.fillStyle = '#4a2c1a'; ctx.fillRect(0,0,size,size);
+            nCtx.fillStyle = 'rgb(128,128,255)'; nCtx.fillRect(0,0,size,size);
+            for(let i=0; i<8; i++) {
+                const x = i * (size/8);
+                ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.1})`; ctx.fillRect(x,0,size/8,size);
+                for(let j=0; j<100; j++){
+                    ctx.beginPath(); ctx.strokeStyle = `rgba(30,15,5,${Math.random()*0.2})`;
+                    let cx = x+Math.random()*(size/8), cy=0; ctx.moveTo(cx,cy);
+                    while(cy<size){ cy+=15; cx+=Math.sin(cy*0.05)*2; ctx.lineTo(cx,cy); }
+                    ctx.stroke();
+                }
+                nCtx.fillStyle = 'rgb(100,128,255)'; nCtx.fillRect(x, 0, 2, size);
+            }
+            return { diffuse: new THREE.CanvasTexture(canvas), normal: new THREE.CanvasTexture(nCanvas) };
         }
-        const woodTexture = new THREE.CanvasTexture(canvas);
-        woodTexture.wrapS = woodTexture.wrapT = THREE.RepeatWrapping;
-        woodTexture.repeat.set(4, 4);
 
-        const floorMat = new THREE.MeshStandardMaterial({ map: woodTexture, roughness: 0.4, metalness: 0.1 });
-        const wallMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.9 });
+        function createBrickTextures() {
+            const size = 512;
+            const canvas = document.createElement('canvas'), nCanvas = document.createElement('canvas');
+            canvas.width = nCanvas.width = size; canvas.height = nCanvas.height = size;
+            const ctx = canvas.getContext('2d'), nCtx = nCanvas.getContext('2d');
+            ctx.fillStyle = '#222'; ctx.fillRect(0, 0, size, size);
+            nCtx.fillStyle = 'rgb(128, 128, 255)'; nCtx.fillRect(0, 0, size, size);
+            const rows = 8, cols = 4;
+            const bW = size/cols, bH = size/rows;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols + 1; c++) {
+                    const x = c * bW - ((r % 2 === 0) ? bW/2 : 0), y = r * bH;
+                    ctx.fillStyle = `rgb(${110 + Math.random()*20}, 40, 30)`;
+                    ctx.fillRect(x+2, y+2, bW-4, bH-4);
+                    nCtx.fillStyle = 'rgb(255, 128, 128)'; nCtx.fillRect(x+2, y+2, 4, bH-4);
+                    nCtx.fillStyle = 'rgb(128, 255, 128)'; nCtx.fillRect(x+2, y+2, bW-4, 4);
+                }
+            }
+            return { diffuse: new THREE.CanvasTexture(canvas), normal: new THREE.CanvasTexture(nCanvas) };
+        }
 
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        scene.add(floor);
+        const wood = createWoodTexture();
+        const bricks = createBrickTextures();
+        [wood.diffuse, wood.normal, bricks.diffuse, bricks.normal].forEach(t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; });
+        wood.diffuse.repeat.set(4, 12); wood.normal.repeat.set(4, 12);
+        bricks.diffuse.repeat.set(6, 2); bricks.normal.repeat.set(6, 2);
 
-        const sphere = new THREE.Mesh(
-            new THREE.SphereGeometry(1, 32, 32), 
-            new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.5, roughness: 0.2 })
-        );
-        sphere.position.set(0, 1.01, 0);
-        sphere.castShadow = true;
-        scene.add(sphere);
+        const wallMat = new THREE.MeshStandardMaterial({ map: bricks.diffuse, normalMap: bricks.normal, roughness: 0.6 });
+        const floorMat = new THREE.MeshStandardMaterial({ map: wood.diffuse, normalMap: wood.normal, roughness: 0.8 });
 
-        let lastTime = performance.now(), frames = 0;
-        const fpsDisplay = document.getElementById('fps-counter');
-        let isLocked = false;
-        const keys = {};
+        // --- HABITACIÓN ---
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 60), floorMat);
+        floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+        const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(20, 60), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+        ceiling.position.y = 10; ceiling.rotation.x = Math.PI / 2; ceiling.receiveShadow = true; scene.add(ceiling);
+
+        const wallL = new THREE.Mesh(new THREE.PlaneGeometry(60, 10), wallMat);
+        wallL.position.set(-10, 5, 0); wallL.rotation.y = Math.PI/2; wallL.receiveShadow = true; scene.add(wallL);
+
+        const wallR = new THREE.Mesh(new THREE.PlaneGeometry(60, 10), wallMat);
+        wallR.position.set(10, 5, 0); wallR.rotation.y = -Math.PI/2; wallR.receiveShadow = true; scene.add(wallR);
+
+        const wallFront = new THREE.Mesh(new THREE.PlaneGeometry(20, 10), wallMat);
+        wallFront.position.set(0, 5, 30); wallFront.rotation.y = Math.PI; wallFront.receiveShadow = true; scene.add(wallFront);
+
+        // VENTANA
+        const wallBack = new THREE.Group();
+        const pT = new THREE.Mesh(new THREE.BoxGeometry(20, 3, 0.5), wallMat); pT.position.set(0, 8.5, -30);
+        const pB = new THREE.Mesh(new THREE.BoxGeometry(20, 3, 0.5), wallMat); pB.position.set(0, 1.5, -30);
+        const pL = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 0.5), wallMat); pL.position.set(-7, 5, -30);
+        const pR = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 0.5), wallMat); pR.position.set(7, 5, -30);
+        [pT, pB, pL, pR].forEach(m => { m.castShadow = true; m.receiveShadow = true; wallBack.add(m); });
+        scene.add(wallBack);
+
+        const glass = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        glass.position.set(0, 5, -30.1); scene.add(glass);
+
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(1.2, 32, 32), new THREE.MeshStandardMaterial({ color: 0xff0000, roughness: 0.2 }));
+        sphere.position.set(0, 1.2, -10); sphere.castShadow = true; sphere.receiveShadow = true; scene.add(sphere);
+
+        // --- JUGADOR ---
         const player = new THREE.Group();
-        player.position.set(0, 1.7, 6);
-        player.add(camera);
+        player.position.set(0, 1.7, 20);
         scene.add(player);
+        player.add(camera);
 
-        // CONTROLES DE RATÓN
-        document.addEventListener('click', () => renderer.domElement.requestPointerLock());
-        document.addEventListener('pointerlockchange', () => {
-            isLocked = document.pointerLockElement === renderer.domElement;
-            document.getElementById('instructions').style.display = isLocked ? 'none' : 'block';
+        const shadowBody = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.7, 16), new THREE.MeshBasicMaterial({ color: 0x000, transparent: true, opacity: 0 }));
+        shadowBody.position.y = -0.85; shadowBody.castShadow = true; player.add(shadowBody);
+
+        // --- CONTROLES Y LINTERNA ---
+        let isLocked = false;
+        document.addEventListener('click', (e) => { if (e.button === 0) renderer.domElement.requestPointerLock(); });
+        document.addEventListener('pointerlockchange', () => isLocked = document.pointerLockElement === renderer.domElement);
+        
+        window.addEventListener('mousedown', (e) => {
+            if (isLocked && e.button === 2) flashLight.visible = !flashLight.visible;
         });
+        window.addEventListener('contextmenu', (e) => e.preventDefault());
 
-        document.addEventListener('mousemove', (e) => {
-            if (!isLocked) return;
-            rotateCamera(e.movementX, e.movementY);
-        });
-
-        // CONTROLES TÁCTILES
-        let touchX = 0, touchY = 0;
-        document.addEventListener('touchstart', (e) => {
-            touchX = e.touches[0].pageX;
-            touchY = e.touches[0].pageY;
-        }, { passive: false });
-
-        document.addEventListener('touchmove', (e) => {
-            const currentX = e.touches[0].pageX;
-            const currentY = e.touches[0].pageY;
-            const diffX = currentX - touchX;
-            const diffY = currentY - touchY;
-            
-            rotateCamera(diffX * 1.5, diffY * 1.5); // Factor 1.5 para mayor sensibilidad táctil
-            
-            touchX = currentX;
-            touchY = currentY;
-            e.preventDefault(); // Evita scroll
-        }, { passive: false });
-
-        function rotateCamera(moveX, moveY) {
-            player.rotation.y -= moveX * 0.002;
-            camera.rotation.x -= moveY * 0.002;
-            camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
-        }
-
+        const keys = {};
         window.addEventListener('keydown', (e) => keys[e.code] = true);
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
+        document.addEventListener('mousemove', (e) => {
+            if (!isLocked) return;
+            player.rotation.y -= e.movementX * 0.002;
+            camera.rotation.x -= e.movementY * 0.002;
+            camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
+        });
+
+        const raycaster = new THREE.Raycaster();
+        let heldObject = null;
+        window.addEventListener('mousedown', (e) => {
+            if (isLocked && e.button === 0) {
+                raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+                if (raycaster.intersectObject(sphere).length > 0) heldObject = sphere;
+            }
+        });
+        window.addEventListener('mouseup', () => heldObject = null);
+
+        // --- ANIMACIÓN ---
+        let lastTime = performance.now(), frames = 0;
         function animate() {
             requestAnimationFrame(animate);
-            const currentTime = performance.now();
             frames++;
-            if (currentTime >= lastTime + 500) {
-                fpsDisplay.innerText = `FPS: ${Math.round((frames * 1000) / (currentTime - lastTime))}`;
-                lastTime = currentTime; frames = 0;
+            if (performance.now() > lastTime + 1000) {
+                document.getElementById('fps-counter').innerText = `FPS: ${frames}`;
+                frames = 0; lastTime = performance.now();
             }
-            if (isLocked || touchX !== 0) { // Permitir movimiento si hay interacción
-                const speed = 0.12;
+
+            if (isLocked) {
+                const speed = 0.15;
                 if (keys['KeyW']) player.translateZ(-speed);
                 if (keys['KeyS']) player.translateZ(speed);
                 if (keys['KeyA']) player.translateX(-speed);
                 if (keys['KeyD']) player.translateX(speed);
+                
+                if (heldObject) {
+                    const v = new THREE.Vector3(0,0,-4).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion())).add(camera.getWorldPosition(new THREE.Vector3()));
+                    heldObject.position.lerp(v, 0.1);
+                }
             }
             renderer.render(scene, camera);
         }
         animate();
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>
