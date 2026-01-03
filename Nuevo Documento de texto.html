@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Room - High Performance FPS</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; cursor: crosshair; font-family: sans-serif; }
+        #instructions {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            color: white; text-align: center; background: rgba(0,0,0,0.8);
+            padding: 12px 25px; border-radius: 30px; border: 1px solid #444; z-index: 10;
+        }
+        #fps-counter {
+            position: absolute; top: 15px; right: 15px;
+            color: #00ffaa; background: rgba(0,0,0,0.7);
+            padding: 8px 15px; border-radius: 5px;
+            font-family: monospace; font-size: 14px; border-right: 3px solid #00ffaa;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instructions"><b>CLIC PARA ENTRAR</b><br><small>Optimización de Sombras Activa (Balance Calidad/Rendimiento)</small></div>
+    <div id="fps-counter">FPS: --</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        // El antialias consume recursos, pero lo dejamos activo para suavizar bordes
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limita la resolución en pantallas 4K para ganar FPS
+        
+        // CONFIGURACIÓN DE SOMBRAS EQUILIBRADA
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.VSMShadowMap; // VSM es más rápido y suave que PCFSoft
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
+        scene.add(ambientLight);
+
+        // LUZ CON SOMBRAS OPTIMIZADAS
+        const pointLight = new THREE.PointLight(0xffffff, 80);
+        pointLight.position.set(2, 4, 2);
+        pointLight.castShadow = true;
+
+        // Bajamos a 1024 pero con VSM se verá muy bien
+        pointLight.shadow.mapSize.width = 1024; 
+        pointLight.shadow.mapSize.height = 1024;
+        pointLight.shadow.camera.near = 0.5;
+        pointLight.shadow.camera.far = 15;
+        pointLight.shadow.blurSamples = 8; // Suavizado por hardware
+        pointLight.shadow.radius = 4;
+        scene.add(pointLight);
+
+        // TEXTURA DE MADERA
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#4a2c10';
+        ctx.fillRect(0, 0, 512, 512);
+        for (let i = 0; i < 100; i++) {
+            ctx.fillStyle = `rgba(30, 15, 5, ${Math.random() * 0.3})`;
+            ctx.fillRect(Math.random() * 512, 0, Math.random() * 5, 512);
+        }
+        const woodTexture = new THREE.CanvasTexture(canvas);
+        woodTexture.wrapS = woodTexture.wrapT = THREE.RepeatWrapping;
+        woodTexture.repeat.set(4, 4);
+
+        // OBJETOS
+        const floorMat = new THREE.MeshStandardMaterial({ map: woodTexture, roughness: 0.4, metalness: 0.1 });
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.9 });
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const sphere = new THREE.Mesh(
+            new THREE.SphereGeometry(1, 32, 32), 
+            new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.5, roughness: 0.2 })
+        );
+        sphere.position.set(0, 1.01, 0);
+        sphere.castShadow = true;
+        scene.add(sphere);
+
+        // FPS Y CONTROLES
+        let lastTime = performance.now(), frames = 0;
+        const fpsDisplay = document.getElementById('fps-counter');
+        let isLocked = false;
+        const keys = {};
+        const player = new THREE.Group();
+        player.position.set(0, 1.7, 6);
+        player.add(camera);
+        scene.add(player);
+
+        document.addEventListener('click', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('pointerlockchange', () => {
+            isLocked = document.pointerLockElement === renderer.domElement;
+            document.getElementById('instructions').style.display = isLocked ? 'none' : 'block';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isLocked) return;
+            player.rotation.y -= e.movementX * 0.002;
+            camera.rotation.x -= e.movementY * 0.002;
+            camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
+        });
+
+        window.addEventListener('keydown', (e) => keys[e.code] = true);
+        window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const currentTime = performance.now();
+            frames++;
+            if (currentTime >= lastTime + 500) {
+                fpsDisplay.innerText = `FPS: ${Math.round((frames * 1000) / (currentTime - lastTime))}`;
+                lastTime = currentTime; frames = 0;
+            }
+            if (isLocked) {
+                const speed = 0.12;
+                if (keys['KeyW']) player.translateZ(-speed);
+                if (keys['KeyS']) player.translateZ(speed);
+                if (keys['KeyA']) player.translateX(-speed);
+                if (keys['KeyD']) player.translateX(speed);
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
